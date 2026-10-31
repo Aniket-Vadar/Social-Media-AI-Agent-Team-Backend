@@ -1,0 +1,11 @@
+.venv/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.pytest_cache/
+socialix.db
+.git/
+.gitignore
+.env
+Technical-document/

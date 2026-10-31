@@ -1,0 +1,36 @@
+services:
+  - type: web
+    name: socialix-backend
+    runtime: python
+    region: oregon
+    plan: free
+    branch: main
+    buildCommand: "pip install --upgrade pip && pip install -r requirements.txt"
+    startCommand: "uvicorn app.main:app --host 0.0.0.0 --port $PORT"
+    healthCheckPath: /healthz
+    autoDeploy: true
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.12.0
+      - key: ENVIRONMENT
+        value: production
+      - key: DATABASE_URL
+        sync: false
+      - key: GOOGLE_API_KEY
+        sync: false
+      - key: LANGSMITH_API_KEY
+        sync: false
+      - key: LANGSMITH_TRACING
+        value: "true"
+      - key: LANGSMITH_PROJECT
+        value: "socialix-production"
+      - key: IMAGEKIT_PUBLIC_KEY
+        sync: false
+      - key: IMAGEKIT_PRIVATE_KEY
+        sync: false
+      - key: IMAGEKIT_URL_ENDPOINT
+        sync: false
+      - key: BLOTATO_API_KEY
+        sync: false
+      - key: SOCIAL_WEBHOOK_URL
+        sync: false

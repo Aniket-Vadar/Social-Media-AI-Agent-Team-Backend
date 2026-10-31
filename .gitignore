@@ -1,0 +1,33 @@
+# Virtual Environments
+.venv/
+venv/
+ENV/
+env/
+
+# Environment Variables & Secrets (NEVER COMMIT)
+.env
+.env.local
+.env.*.local
+*.env
+!.env.example
+
+# Python Cache & Bytecode
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Local SQLite Databases
+*.db
+*.sqlite3
+socialix.db
+
+# Logs & IDE
+*.log
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
