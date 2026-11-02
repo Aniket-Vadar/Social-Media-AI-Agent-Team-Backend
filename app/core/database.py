@@ -20,6 +20,13 @@ else:
         "pool_pre_ping": True,
         "pool_recycle": 3600,
     })
+    # Supabase Connection Pooler (PgBouncer IPv4) compatibility for asyncpg
+    if "pooler.supabase.co" in db_url or ":6543" in db_url:
+        engine_kwargs["connect_args"] = {
+            "statement_cache_size": 0,
+            "prepared_statement_cache_size": 0
+        }
+
 
 try:
     engine = create_async_engine(db_url, **engine_kwargs)
