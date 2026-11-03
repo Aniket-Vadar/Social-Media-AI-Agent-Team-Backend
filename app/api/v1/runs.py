@@ -88,7 +88,13 @@ async def start_run(
         "budget": {"max_steps": 25}
     }
 
+    from langchain_core.tracers import LangChainTracer
     from langchain_core.tracers.context import collect_runs
+
+    callbacks = []
+    if settings.LANGSMITH_API_KEY:
+        project_name = settings.LANGSMITH_PROJECT or "Projects"
+        callbacks.append(LangChainTracer(project_name=project_name))
 
     config = {
         "configurable": {"thread_id": thread_id},
@@ -99,7 +105,8 @@ async def start_run(
             "run_id": run_id
         },
         "tags": ["socialix", "office-agents", tenant.workspace_id],
-        "run_name": f"Socialix Run - {payload.message[:30]}"
+        "run_name": f"Socialix Run - {payload.message[:30]}",
+        "callbacks": callbacks
     }
 
     try:
@@ -107,6 +114,9 @@ async def start_run(
             final_state = await agent_graph.ainvoke(initial_state, config=config)
             if cb.traced_runs:
                 run.langsmith_run_id = str(cb.traced_runs[0].id)
+            elif callbacks and hasattr(callbacks[0], "latest_run") and callbacks[0].latest_run:
+                run.langsmith_run_id = str(callbacks[0].latest_run.id)
+
 
         # Update run with final status and plan
         run.plan = final_state.get("plan", [])
