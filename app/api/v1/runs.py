@@ -10,7 +10,7 @@ from sqlalchemy import select
 from app.core.config import settings
 from app.core.database import get_db
 from app.core.security import get_tenant_context, TenantContext
-from app.models.models import AgentRun, AgentMessage, Campaign, Post
+from app.models.models import AgentRun, AgentMessage, Campaign, Post, Workspace
 from app.schemas.agent import AgentRunCreate, AgentRunOut, ResumeRunRequest
 from app.schemas.common import ApiResponse
 from app.graph.builder import agent_graph
@@ -35,11 +35,47 @@ async def start_run(
     thread_id = payload.thread_id or f"thread_{uuid.uuid4().hex[:12]}"
     run_id = str(uuid.uuid4())
 
-    # Fetch campaign context for brand voice and approval rules
+    # Ensure workspace exists in DB to prevent foreign key errors (e.g. from frontend dummy IDs)
+    ws = await db.get(Workspace, tenant.workspace_id)
+    if not ws:
+        first_ws = (await db.execute(select(Workspace).limit(1))).scalar_one_or_none()
+        if first_ws:
+            tenant.workspace_id = str(first_ws.id)
+        else:
+            new_ws = Workspace(
+                id=tenant.workspace_id,
+                name="Default Workspace",
+                owner_id="00000000-0000-0000-0000-000000000001",
+                plan="pro"
+            )
+            db.add(new_ws)
+            await db.flush()
+
+    # Ensure campaign exists in DB to prevent foreign key errors
     camp_result = await db.execute(
-        select(Campaign).where(Campaign.id == campaign_id, Campaign.workspace_id == tenant.workspace_id)
+        select(Campaign).where(Campaign.id == campaign_id)
     )
     campaign = camp_result.scalar_one_or_none()
+    if not campaign:
+        first_camp = (await db.execute(
+            select(Campaign).where(Campaign.workspace_id == tenant.workspace_id).limit(1)
+        )).scalar_one_or_none()
+        if first_camp:
+            campaign = first_camp
+            campaign_id = str(first_camp.id)
+        else:
+            campaign = Campaign(
+                id=campaign_id,
+                workspace_id=tenant.workspace_id,
+                name="Default Campaign",
+                goal="Autonomous AI Growth",
+                brand_voice={"tone": "professional, engaging", "banned_words": []},
+                approval_mode="manual",
+                status="active"
+            )
+            db.add(campaign)
+            await db.flush()
+
     campaign_ctx = {
         "goal": campaign.goal if campaign else "Tech and Social Media Growth",
         "brand_voice": campaign.brand_voice if campaign else {},

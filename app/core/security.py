@@ -55,12 +55,12 @@ async def get_tenant_context(
                     detail="Invalid authentication credentials",
                 )
 
-    # In development mode, provide standard default tenant IDs matching the deployed UI
+    # Provide standard default tenant IDs matching the deployed UI
     if not workspace_id:
-        workspace_id = "ws-default-tubeguruji"
+        workspace_id = "00000000-0000-0000-0000-000000000001"
     if not campaign_id:
-        campaign_id = "camp-tubeguruji-instagram"
+        campaign_id = "065743f9-f908-5392-9192-ac92ab7895a9"
     if not user_id:
-        user_id = "user-saloni"
+        user_id = "00000000-0000-0000-0000-000000000001"
 
     return TenantContext(workspace_id=workspace_id, campaign_id=campaign_id, user_id=user_id)

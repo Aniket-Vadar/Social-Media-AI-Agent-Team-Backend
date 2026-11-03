@@ -67,10 +67,34 @@ async def init_db() -> None:
     # Seed default workspace and campaign if not existing
     async with AsyncSessionLocal() as session:
         try:
-            ws_check = await session.execute(
-                select(Workspace).where(Workspace.id == "ws-default-tubeguruji")
-            )
-            if not ws_check.scalar_one_or_none():
+            # 1. Frontend default workspace (00000000-0000-0000-0000-000000000001)
+            dummy_ws = await session.get(Workspace, "00000000-0000-0000-0000-000000000001")
+            if not dummy_ws:
+                dummy_ws = Workspace(
+                    id="00000000-0000-0000-0000-000000000001",
+                    name="Default Frontend Workspace",
+                    owner_id="00000000-0000-0000-0000-000000000001",
+                    plan="pro"
+                )
+                session.add(dummy_ws)
+                await session.flush()
+
+            # 2. Frontend campaigns
+            dummy_camp = await session.get(Campaign, "065743f9-f908-5392-9192-ac92ab7895a9")
+            if not dummy_camp:
+                dummy_camp = Campaign(
+                    id="065743f9-f908-5392-9192-ac92ab7895a9",
+                    workspace_id="00000000-0000-0000-0000-000000000001",
+                    name="Default Campaign",
+                    goal="Autonomous AI Growth",
+                    brand_voice={"tone": "professional, engaging", "banned_words": []},
+                    status="active"
+                )
+                session.add(dummy_camp)
+
+            # 3. Named tubeguruji workspace
+            ws_check = await session.get(Workspace, "ws-default-tubeguruji")
+            if not ws_check:
                 ws = Workspace(
                     id="ws-default-tubeguruji",
                     name="Tubeguruji Socialix Workspace",
@@ -79,10 +103,8 @@ async def init_db() -> None:
                 session.add(ws)
                 await session.flush()
 
-                camp_check = await session.execute(
-                    select(Campaign).where(Campaign.id == "camp-tubeguruji-instagram")
-                )
-                if not camp_check.scalar_one_or_none():
+                camp_check = await session.get(Campaign, "camp-tubeguruji-instagram")
+                if not camp_check:
                     camp = Campaign(
                         id="camp-tubeguruji-instagram",
                         workspace_id="ws-default-tubeguruji",
@@ -92,7 +114,7 @@ async def init_db() -> None:
                         status="active"
                     )
                     session.add(camp)
-                await session.commit()
+            await session.commit()
         except Exception as e:
             logger.warning(f"Seed workspace check: {e}")
             await session.rollback()
