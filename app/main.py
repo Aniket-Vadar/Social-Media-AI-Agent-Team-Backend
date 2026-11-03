@@ -48,6 +48,7 @@ app = FastAPI(
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.CORS_ORIGINS,
+    allow_origin_regex=r"https://.*\.vercel\.app",
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -56,6 +57,16 @@ app.add_middleware(
 # Mount API Routers
 app.include_router(api_router, prefix=settings.API_V1_STR)
 app.include_router(api_router)  # Also mount directly for convenient BFF/client access
+
+
+@app.get("/health", tags=["Health"])
+@app.get("/api/v1/health", tags=["Health"])
+async def health():
+    return {
+        "status": "healthy",
+        "service": settings.PROJECT_NAME,
+        "version": settings.VERSION
+    }
 
 
 @app.get("/", tags=["Root"])
