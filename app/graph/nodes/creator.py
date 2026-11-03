@@ -44,7 +44,11 @@ async def generate_post_content_with_ai(user_prompt: str, tone: str, post_index:
             f"Return ONLY valid JSON matching this structure: {{\"title\": \"...\", \"caption\": \"...\", \"hashtags\": [\"#...\"]}}"
         )
         resp = await llm.ainvoke(prompt_text)
-        match = re.search(r"\{.*\}", resp.content, re.DOTALL)
+        if isinstance(resp.content, list):
+            text_resp = "".join([c if isinstance(c, str) else c.get("text", "") for c in resp.content])
+        else:
+            text_resp = str(resp.content)
+        match = re.search(r"\{.*\}", text_resp, re.DOTALL)
         if match:
             return json.loads(match.group(0))
     except Exception as e:
@@ -119,9 +123,20 @@ async def creator_node(state: AgentState) -> Dict[str, Any]:
         if not is_compliant:
             caption = caption[:1000]
 
-        # Select topic-appropriate image and transform via ImageKit
+        # Select topic-appropriate image and upload directly to ImageKit CDN
         raw_img = get_topic_image(str(last_msg), index=i)
-        transformed_url = imagekit_helper.transform_url(raw_img, aspect_ratio="1:1", overlay_text=title[:30])
+        try:
+            upload_res = await imagekit_helper.upload_image(
+                file=raw_img,
+                file_name=f"agent_post_{uuid.uuid4().hex[:6]}.jpg",
+                folder="/socialix/agent_posts",
+                tags=["socialix", "ai-post"]
+            )
+            ik_base = upload_res.get("url") or raw_img
+            transformed_url = imagekit_helper.transform_url(ik_base, aspect_ratio="1:1", overlay_text=title[:30])
+        except Exception as e:
+            logger.warning(f"ImageKit live upload fallback: {e}")
+            transformed_url = imagekit_helper.transform_url(raw_img, aspect_ratio="1:1", overlay_text=title[:30])
 
         draft = {
             "id": post_id,
