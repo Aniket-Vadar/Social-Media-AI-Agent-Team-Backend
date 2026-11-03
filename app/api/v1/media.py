@@ -9,7 +9,8 @@ from app.core.security import get_tenant_context, TenantContext
 from app.models.models import MediaAsset, Post
 from app.schemas.media import (
     ImageKitAuthResponse, ImageTransformRequest,
-    AiImageEditRequest, MediaAssetResponse
+    AiImageEditRequest, MediaAssetResponse,
+    ImageUploadRequest, ImageUploadResponse
 )
 from app.schemas.common import ApiResponse
 from app.tools.imagekit import imagekit_helper
@@ -131,6 +132,70 @@ async def ai_edit_image(
     return ApiResponse(data=MediaAssetResponse.model_validate(media))
 
 
+@router.get("/presets", response_model=ApiResponse[Dict[str, Any]])
+async def get_media_presets():
+    """Returns official social media aspect ratio presets and smart crop settings."""
+    return ApiResponse(
+        data={
+            "presets": {
+                "instagram_square": {"ratio": "1:1", "dimensions": "1080x1080", "recommended_for": "Instagram Feed, Threads"},
+                "instagram_portrait": {"ratio": "4:5", "dimensions": "1080x1350", "recommended_for": "Instagram Feed (High Visibility)"},
+                "story_reel_tiktok": {"ratio": "9:16", "dimensions": "1080x1920", "recommended_for": "Reels, Stories, TikTok, YouTube Shorts"},
+                "twitter_landscape": {"ratio": "16:9", "dimensions": "1200x675", "recommended_for": "X / Twitter, Facebook Feed"},
+                "linkedin_post": {"ratio": "1.91:1", "dimensions": "1200x627", "recommended_for": "LinkedIn Article & Feed"}
+            },
+            "smart_features": {
+                "focal_auto_crop": "fo-auto keeps the central subject or human face perfectly in frame",
+                "text_overlay": "Dynamic text banner with auto-contrast background",
+                "watermark_overlay": "Custom PNG watermark positioned in bottom corner"
+            }
+        }
+    )
+
+
+@router.post("/upload", response_model=ApiResponse[ImageUploadResponse], status_code=status.HTTP_201_CREATED)
+async def upload_media_to_imagekit(
+    payload: ImageUploadRequest,
+    db: AsyncSession = Depends(get_db),
+    tenant: TenantContext = Depends(get_tenant_context)
+):
+    """
+    Direct Server-Side ImageKit Upload:
+    Accepts external image URL, base64 data, or file URI.
+    Uploads to ImageKit and generates all social platform variants (1:1, 4:5, 9:16, 16:9, 1.91:1).
+    """
+    res = await imagekit_helper.upload_image(
+        file=payload.file_or_url,
+        file_name=payload.file_name or f"post_{uuid.uuid4().hex[:6]}.jpg",
+        folder=payload.folder or "/socialix/uploads",
+        tags=payload.tags
+    )
+
+    # Persist MediaAsset in database
+    media = MediaAsset(
+        id=str(uuid.uuid4()),
+        workspace_id=tenant.workspace_id,
+        post_id=payload.post_id,
+        imagekit_file_id=res["file_id"],
+        url=res["url"],
+        aspect_ratio="1:1",
+        transformations={"variants": res.get("variants", {}), "provider": res.get("provider")}
+    )
+    db.add(media)
+    await db.commit()
+
+    return ApiResponse(
+        data=ImageUploadResponse(
+            file_id=res["file_id"],
+            file_name=res["file_name"],
+            url=res["url"],
+            thumbnail_url=res["thumbnail_url"],
+            variants=res.get("variants", {}),
+            provider=res.get("provider", "imagekit")
+        )
+    )
+
+
 @router.get("/{media_id}", response_model=ApiResponse[MediaAssetResponse])
 async def get_media_asset(
     media_id: str,
@@ -148,3 +213,4 @@ async def get_media_asset(
     if not media:
         raise HTTPException(status_code=404, detail="Media asset not found")
     return ApiResponse(data=MediaAssetResponse.model_validate(media))
+

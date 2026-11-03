@@ -43,6 +43,25 @@ async def main():
         assert "token" in ik_auth and "signature" in ik_auth
         print(f"[OK] 5. /api/v1/media/imagekit-auth -> Server signature issued for direct client upload")
 
+        # 5b. ImageKit Presets & Direct Server Upload
+        res = await client.get("/api/v1/media/presets")
+        assert res.status_code == 200
+        presets_data = res.json()["data"]
+        assert "instagram_portrait" in presets_data["presets"]
+        print(f"[OK] 5b. /api/v1/media/presets -> {len(presets_data['presets'])} social presets loaded (1:1, 4:5, 9:16, 16:9, 1.91:1)")
+
+        upload_payload = {
+            "file_or_url": "https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe",
+            "file_name": "campaign_hero.jpg",
+            "folder": "/socialix/tests"
+        }
+        res = await client.post("/api/v1/media/upload", json=upload_payload)
+        assert res.status_code == 201
+        up_data = res.json()["data"]
+        assert "instagram_portrait_4_5" in up_data["variants"]
+        print(f"[OK] 5c. /api/v1/media/upload -> Direct ImageKit upload verified, 5 variants generated")
+
+
         # 6. Image Transformations (Aspect Ratios, Text Overlays, Filters)
         transform_payload = {
             "image_url": "https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe",

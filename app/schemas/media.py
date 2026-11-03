@@ -42,3 +42,21 @@ class MediaAssetResponse(BaseModel):
     created_at: datetime
 
     model_config = ConfigDict(from_attributes=True)
+
+
+class ImageUploadRequest(BaseModel):
+    file_or_url: str = Field(..., description="External image URL, base64 data string, or file URI to upload")
+    file_name: Optional[str] = Field("socialix_post.jpg", description="Target file name in ImageKit")
+    folder: Optional[str] = Field("/socialix/posts", description="Folder in ImageKit media library")
+    tags: Optional[List[str]] = Field(default_factory=lambda: ["socialix", "ai-agent"])
+    post_id: Optional[str] = None
+
+
+class ImageUploadResponse(BaseModel):
+    file_id: str
+    file_name: str
+    url: str
+    thumbnail_url: str
+    variants: Dict[str, str] = Field(default_factory=dict)
+    provider: str
+
