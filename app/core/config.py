@@ -33,8 +33,8 @@ class Settings(BaseSettings):
 
     # Google Gemini LLM
     GOOGLE_API_KEY: Optional[str] = None
-    GEMINI_PRO_MODEL: str = "gemini-1.5-pro"
-    GEMINI_FLASH_MODEL: str = "gemini-1.5-flash"
+    GEMINI_PRO_MODEL: str = "gemini-2.5-pro"
+    GEMINI_FLASH_MODEL: str = "gemini-2.5-flash"
 
     # LangSmith Observability
     LANGSMITH_API_KEY: Optional[str] = None

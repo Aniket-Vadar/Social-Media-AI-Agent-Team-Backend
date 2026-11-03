@@ -1,7 +1,10 @@
+import json
+import re
 import uuid
 from typing import Dict, Any, List
 from app.graph.state import AgentState
 from app.tools.imagekit import imagekit_helper
+from app.core.config import settings
 from langchain_core.messages import AIMessage
 import logging
 
@@ -16,6 +19,63 @@ def self_critique_pass(caption: str, hashtags: List[str], banned_words: List[str
     if len(caption) > max_length:
         return False
     return True
+
+
+async def generate_post_content_with_ai(user_prompt: str, tone: str, post_index: int = 1) -> Dict[str, Any]:
+    """Generates creative post copy using Google Gemini LLM."""
+    if not settings.GOOGLE_API_KEY:
+        return {}
+
+    try:
+        from langchain_google_genai import ChatGoogleGenerativeAI
+        llm = ChatGoogleGenerativeAI(
+            model=settings.GEMINI_FLASH_MODEL or "gemini-2.5-flash",
+            google_api_key=settings.GOOGLE_API_KEY,
+            temperature=0.7
+        )
+        prompt_text = (
+            f"You are a top-tier social media creative director and copywriter.\n"
+            f"Create an engaging, platform-tailored post (Variation #{post_index}) for the user's request: '{user_prompt}'.\n"
+            f"Brand tone: {tone}.\n"
+            f"Requirements:\n"
+            f"- 'title': A short, punchy headline (under 35 chars, no emojis).\n"
+            f"- 'caption': Engaging, high-converting social caption with clean spacing, emojis, and call to action.\n"
+            f"- 'hashtags': 5 relevant, trending hashtags starting with #.\n"
+            f"Return ONLY valid JSON matching this structure: {{\"title\": \"...\", \"caption\": \"...\", \"hashtags\": [\"#...\"]}}"
+        )
+        resp = await llm.ainvoke(prompt_text)
+        match = re.search(r"\{.*\}", resp.content, re.DOTALL)
+        if match:
+            return json.loads(match.group(0))
+    except Exception as e:
+        logger.warning(f"Creator Gemini generation fallback: {e}")
+    return {}
+
+
+def get_topic_image(prompt: str, index: int = 0) -> str:
+    """Selects high-resolution, relevant Unsplash images based on user prompt topic."""
+    p = prompt.lower()
+    if any(k in p for k in ["samsung", "s24", "mobile", "phone", "smartphone", "galaxy", "iphone", "apple", "gadget", "android"]):
+        images = [
+            "https://images.unsplash.com/photo-1610945415295-d9bbf067e59c",  # Samsung Galaxy phone
+            "https://images.unsplash.com/photo-1511707171634-5f897ff02aa9",  # Modern smartphone
+        ]
+    elif any(k in p for k in ["coffee", "cafe", "latte", "roast", "brew", "espresso", "bakery", "croissant"]):
+        images = [
+            "https://images.unsplash.com/photo-1509042239860-f550ce710b93",  # Artisan coffee
+            "https://images.unsplash.com/photo-1501339847302-ac426a4a7cbb",  # Cozy cafe
+        ]
+    elif any(k in p for k in ["laptop", "macbook", "computer", "tech", "software", "code", "ai", "startup"]):
+        images = [
+            "https://images.unsplash.com/photo-1519389950473-47ba0277781c",  # Modern tech workspace
+            "https://images.unsplash.com/photo-1498050108023-c5249f4df085",  # Laptop with code
+        ]
+    else:
+        images = [
+            "https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe",  # Modern abstract visual
+            "https://images.unsplash.com/photo-1551288049-bebda4e38f71",  # Creative chart design
+        ]
+    return images[index % len(images)]
 
 
 async def creator_node(state: AgentState) -> Dict[str, Any]:
@@ -38,31 +98,30 @@ async def creator_node(state: AgentState) -> Dict[str, Any]:
         post_count = 1
 
     created_drafts = []
-    base_images = [
-        "https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe",
-        "https://images.unsplash.com/photo-1551288049-bebda4e38f71"
-    ]
 
     for i in range(post_count):
         post_id = f"draft_post_{uuid.uuid4().hex[:8]}"
-        title = f"Autonomous Growth Strategy #{i + 1}"
-        caption = (
-            f"🚀 Ready to level up your social media presence? Here is the blueprint:\n\n"
+
+        # Attempt dynamic Gemini copy generation
+        ai_data = await generate_post_content_with_ai(str(last_msg), tone, post_index=i + 1)
+        title = ai_data.get("title") or f"Creative Post #{i + 1}"
+        caption = ai_data.get("caption") or (
+            f"🚀 {last_msg}\n\n"
             f"1. Continuous research of high-velocity trends.\n"
             f"2. Consistent, high-value storytelling tailored to your audience.\n"
             f"3. Posting at prime engagement windows with zero manual hassle.\n\n"
             f"Drop a '🔥' below if you want the full AI agent automation workflow! 👇"
         )
-        hashtags = ["#SocialMediaGrowth", "#AIAgents", "#ContentStrategy", "#Automation", "#Creators"]
+        hashtags = ai_data.get("hashtags") or ["#Innovation", "#TechTrends", "#SocialMediaGrowth", "#AIAgents", "#FutureOfTech"]
 
         # Run Self-Critique Pass
         is_compliant = self_critique_pass(caption, hashtags, banned_words)
         if not is_compliant:
             caption = caption[:1000]
 
-        # Select & Transform image using ImageKit
-        raw_img = base_images[i % len(base_images)]
-        transformed_url = imagekit_helper.transform_url(raw_img, aspect_ratio="1:1", overlay_text=title)
+        # Select topic-appropriate image and transform via ImageKit
+        raw_img = get_topic_image(str(last_msg), index=i)
+        transformed_url = imagekit_helper.transform_url(raw_img, aspect_ratio="1:1", overlay_text=title[:30])
 
         draft = {
             "id": post_id,
@@ -97,6 +156,13 @@ async def creator_node(state: AgentState) -> Dict[str, Any]:
         ),
         name="creator"
     )
+
+    return {
+        "messages": [msg],
+        "plan": updated_plan,
+        "artifacts": updated_artifacts,
+        "step_count": state.get("step_count", 0) + 1
+    }
 
     return {
         "messages": [msg],
