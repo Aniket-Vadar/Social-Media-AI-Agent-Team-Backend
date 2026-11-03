@@ -80,8 +80,8 @@ class ImageKitHelper:
                 parts.append("e-sharpen")
 
         if overlay_text:
-            clean_text = urllib.parse.quote(overlay_text[:60])
-            parts.append(f"ot-{clean_text},ots-32,otc-FFFFFF,tg-b")
+            clean_text = urllib.parse.quote(overlay_text[:50])
+            parts.append(f"l-text,i-{clean_text},fs-32,co-FFFFFF,l-end")
 
         if watermark_url:
             clean_wm = urllib.parse.quote(watermark_url, safe="")
