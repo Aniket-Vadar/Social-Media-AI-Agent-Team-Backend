@@ -7,6 +7,7 @@ from fastapi import APIRouter, Depends, HTTPException, status, Request
 from sse_starlette.sse import EventSourceResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
+from app.core.config import settings
 from app.core.database import get_db
 from app.core.security import get_tenant_context, TenantContext
 from app.models.models import AgentRun, AgentMessage, Campaign, Post
@@ -93,8 +94,10 @@ async def start_run(
 
     callbacks = []
     if settings.LANGSMITH_API_KEY:
+        from langsmith import Client
+        ls_client = Client(api_key=settings.LANGSMITH_API_KEY)
         project_name = settings.LANGSMITH_PROJECT or "Projects"
-        callbacks.append(LangChainTracer(project_name=project_name))
+        callbacks.append(LangChainTracer(project_name=project_name, client=ls_client))
 
     config = {
         "configurable": {"thread_id": thread_id},
@@ -116,6 +119,10 @@ async def start_run(
                 run.langsmith_run_id = str(cb.traced_runs[0].id)
             elif callbacks and hasattr(callbacks[0], "latest_run") and callbacks[0].latest_run:
                 run.langsmith_run_id = str(callbacks[0].latest_run.id)
+
+        if callbacks and hasattr(callbacks[0], "wait_for_futures"):
+            callbacks[0].wait_for_futures()
+
 
 
         # Update run with final status and plan

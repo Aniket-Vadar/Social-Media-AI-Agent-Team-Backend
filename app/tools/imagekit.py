@@ -4,6 +4,9 @@ import time
 import uuid
 import urllib.parse
 import logging
+import base64
+import os
+import httpx
 from typing import Dict, Any, Optional, List, Union
 from app.core.config import settings
 
@@ -160,10 +163,35 @@ class ImageKitHelper:
         private_key = settings.IMAGEKIT_PRIVATE_KEY
         if private_key:
             try:
+                # Prepare bytes from whatever format is provided (URL, base64 data URI, raw base64, file path, or bytes)
+                file_bytes: bytes
+                if isinstance(file, bytes):
+                    file_bytes = file
+                elif isinstance(file, str):
+                    if file.startswith(("http://", "https://")):
+                        async with httpx.AsyncClient(timeout=20.0) as client:
+                            resp = await client.get(file)
+                            resp.raise_for_status()
+                            file_bytes = resp.content
+                    elif file.startswith("data:"):
+                        base64_data = file.split(",", 1)[1] if "," in file else file
+                        file_bytes = base64.b64decode(base64_data)
+                    elif os.path.exists(file):
+                        with open(file, "rb") as f:
+                            file_bytes = f.read()
+                    else:
+                        # Attempt base64 decode, fallback to raw utf-8 bytes
+                        try:
+                            file_bytes = base64.b64decode(file)
+                        except Exception:
+                            file_bytes = file.encode("utf-8")
+                else:
+                    file_bytes = bytes(file)
+
                 from imagekitio import ImageKit
                 ik = ImageKit(private_key=private_key)
                 upload_res = ik.files.upload(
-                    file=file,
+                    file=file_bytes,
                     file_name=file_name,
                     folder=folder,
                     tags=tags or ["socialix", "ai-agent"]
