@@ -1,16 +1,16 @@
 import json
 import uuid
 import asyncio
-from typing import AsyncGenerator
+from typing import AsyncGenerator, List
 from datetime import datetime
 from fastapi import APIRouter, Depends, HTTPException, status, Request
 from sse_starlette.sse import EventSourceResponse
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
+from sqlalchemy import select, desc
 from app.core.config import settings
 from app.core.database import get_db
 from app.core.security import get_tenant_context, TenantContext
-from app.models.models import AgentRun, AgentMessage, Campaign, Post, Workspace
+from app.models.models import AgentRun, AgentMessage, Campaign, Post, Workspace, MediaAsset
 from app.schemas.agent import AgentRunCreate, AgentRunOut, ResumeRunRequest
 from app.schemas.common import ApiResponse
 from app.graph.builder import agent_graph
@@ -19,6 +19,24 @@ import logging
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/runs", tags=["Agent Runs"])
+
+
+@router.get("", response_model=ApiResponse[List[AgentRunOut]])
+async def list_runs(
+    limit: int = 20,
+    db: AsyncSession = Depends(get_db),
+    tenant: TenantContext = Depends(get_tenant_context)
+):
+    """List recent agent runs for the current tenant workspace."""
+    query = (
+        select(AgentRun)
+        .where(AgentRun.workspace_id == tenant.workspace_id)
+        .order_by(desc(AgentRun.created_at))
+        .limit(limit)
+    )
+    result = await db.execute(query)
+    runs = result.scalars().all()
+    return ApiResponse(data=[AgentRunOut.model_validate(r) for r in runs])
 
 
 @router.post("", response_model=ApiResponse[AgentRunOut], status_code=status.HTTP_201_CREATED)
@@ -181,6 +199,15 @@ async def start_run(
                 agent_run_id=run.id
             )
             db.add(post_record)
+            if d.get("media_url"):
+                media_record = MediaAsset(
+                    id=str(uuid.uuid4()),
+                    workspace_id=tenant.workspace_id,
+                    post_id=post_record.id,
+                    url=d["media_url"],
+                    aspect_ratio=d.get("aspect_ratio", "1:1")
+                )
+                db.add(media_record)
 
         # Save assistant responses to message history
         for msg in final_state.get("messages", []):

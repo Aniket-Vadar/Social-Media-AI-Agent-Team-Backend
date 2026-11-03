@@ -1,6 +1,6 @@
 import logging
 from contextlib import asynccontextmanager
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, Request, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from app.core.config import settings
@@ -80,18 +80,51 @@ async def root():
     }
 
 
+def _cors_headers(request: Request) -> dict:
+    origin = request.headers.get("origin")
+    headers = {}
+    if origin:
+        headers["Access-Control-Allow-Origin"] = origin
+        headers["Access-Control-Allow-Credentials"] = "true"
+        headers["Access-Control-Allow-Methods"] = "GET, POST, PUT, DELETE, OPTIONS, PATCH"
+        headers["Access-Control-Allow-Headers"] = "Content-Type, Authorization, X-Workspace-Id, X-Campaign-Id, X-User-Id"
+    else:
+        headers["Access-Control-Allow-Origin"] = "*"
+    return headers
+
+
+@app.exception_handler(HTTPException)
+async def http_exception_handler(request: Request, exc: HTTPException):
+    headers = _cors_headers(request)
+    if exc.headers:
+        headers.update(exc.headers)
+    return JSONResponse(
+        status_code=exc.status_code,
+        content={
+            "success": False,
+            "error": {
+                "code": "HTTP_ERROR",
+                "message": exc.detail
+            }
+        },
+        headers=headers
+    )
+
+
 @app.exception_handler(Exception)
 async def global_exception_handler(request: Request, exc: Exception):
     logger.error(f"Unhandled exception at {request.url.path}: {exc}", exc_info=True)
+    headers = _cors_headers(request)
     return JSONResponse(
         status_code=500,
         content={
             "success": False,
             "error": {
                 "code": "INTERNAL_SERVER_ERROR",
-                "message": "An unexpected server error occurred."
+                "message": str(exc) if settings.DEBUG else "An unexpected server error occurred."
             }
-        }
+        },
+        headers=headers
     )
 
 

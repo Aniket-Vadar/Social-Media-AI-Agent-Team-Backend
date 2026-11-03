@@ -1,6 +1,6 @@
 from typing import Optional, List, Dict, Any
 from datetime import datetime
-from pydantic import BaseModel, Field, ConfigDict
+from pydantic import BaseModel, Field, ConfigDict, computed_field
 
 
 class PostBase(BaseModel):
@@ -72,5 +72,12 @@ class PostOut(PostBase):
     updated_at: datetime
     media_assets: List[MediaAssetOut] = Field(default_factory=list)
     targets: List[PostTargetOut] = Field(default_factory=list)
+
+    @computed_field
+    @property
+    def media_url(self) -> Optional[str]:
+        if self.media_assets and len(self.media_assets) > 0:
+            return self.media_assets[0].url
+        return None
 
     model_config = ConfigDict(from_attributes=True)

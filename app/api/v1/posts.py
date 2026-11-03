@@ -4,6 +4,7 @@ from datetime import datetime
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, desc
+from sqlalchemy.orm import selectinload
 from app.core.database import get_db
 from app.core.security import get_tenant_context, TenantContext
 from app.models.models import Post, PostTarget, MediaAsset, Workspace, Campaign
@@ -22,7 +23,11 @@ async def list_posts(
     tenant: TenantContext = Depends(get_tenant_context)
 ):
     """List posts scoped to the tenant workspace and campaign with filters."""
-    query = select(Post).where(Post.workspace_id == tenant.workspace_id)
+    query = (
+        select(Post)
+        .options(selectinload(Post.media_assets), selectinload(Post.targets))
+        .where(Post.workspace_id == tenant.workspace_id)
+    )
     if tenant.campaign_id:
         query = query.where(Post.campaign_id == tenant.campaign_id)
     if status_filter:
@@ -31,48 +36,6 @@ async def list_posts(
     query = query.order_by(desc(Post.created_at)).limit(limit)
     result = await db.execute(query)
     posts = result.scalars().all()
-
-    # If no posts yet, provide seed post matching UI state
-    if not posts:
-        ws_res = await db.execute(select(Workspace).where(Workspace.id == tenant.workspace_id))
-        if not ws_res.scalar_one_or_none():
-            ws = Workspace(
-                id=tenant.workspace_id,
-                name="Tubeguruji Workspace",
-                owner_id=tenant.user_id
-            )
-            db.add(ws)
-            await db.flush()
-
-        camp_id = tenant.campaign_id or "camp-tubeguruji-instagram"
-        camp_res = await db.execute(select(Campaign).where(Campaign.id == camp_id))
-        if not camp_res.scalar_one_or_none():
-            camp = Campaign(
-                id=camp_id,
-                workspace_id=tenant.workspace_id,
-                name="Tubeguruji Instagram",
-                goal="Autonomous social media management",
-                approval_mode="manual",
-                status="active"
-            )
-            db.add(camp)
-            await db.flush()
-
-        demo_post = Post(
-            id="post-demo-coffee-launch",
-            workspace_id=tenant.workspace_id,
-            campaign_id=camp_id,
-            title="Coffee shop launch post 2",
-            caption="☕ Bringing artisanal brews and cozy vibes to your daily routine. Come discover our handcrafted signature drinks this Friday at 9:00 PM!",
-            hashtags=["#CoffeeLovers", "#NewCafe", "#ArtisanalBrew", "#WeekendVibes"],
-            status="scheduled",
-            scheduled_at=datetime.utcnow(),
-            created_by="agent"
-        )
-        db.add(demo_post)
-        await db.commit()
-        await db.refresh(demo_post)
-        posts = [demo_post]
 
     return ApiResponse(data=[PostOut.model_validate(p) for p in posts])
 
@@ -150,7 +113,12 @@ async def create_post(
         db.add(media)
 
     await db.commit()
-    await db.refresh(post)
+    post_res = await db.execute(
+        select(Post)
+        .options(selectinload(Post.media_assets), selectinload(Post.targets))
+        .where(Post.id == post.id)
+    )
+    post = post_res.scalar_one()
     return ApiResponse(data=PostOut.model_validate(post))
 
 
@@ -162,7 +130,9 @@ async def get_post(
 ):
     """Retrieve full details of a specific post."""
     result = await db.execute(
-        select(Post).where(Post.id == post_id, Post.workspace_id == tenant.workspace_id)
+        select(Post)
+        .options(selectinload(Post.media_assets), selectinload(Post.targets))
+        .where(Post.id == post_id, Post.workspace_id == tenant.workspace_id)
     )
     post = result.scalar_one_or_none()
     if not post:
@@ -182,7 +152,9 @@ async def approve_post(
 ):
     """Approve post for scheduling/publishing with optional live edits."""
     result = await db.execute(
-        select(Post).where(Post.id == post_id, Post.workspace_id == tenant.workspace_id)
+        select(Post)
+        .options(selectinload(Post.media_assets), selectinload(Post.targets))
+        .where(Post.id == post_id, Post.workspace_id == tenant.workspace_id)
     )
     post = result.scalar_one_or_none()
     if not post:
@@ -210,7 +182,12 @@ async def approve_post(
 
     post.updated_at = datetime.utcnow()
     await db.commit()
-    await db.refresh(post)
+    post_res = await db.execute(
+        select(Post)
+        .options(selectinload(Post.media_assets), selectinload(Post.targets))
+        .where(Post.id == post.id)
+    )
+    post = post_res.scalar_one()
     return ApiResponse(data=PostOut.model_validate(post))
 
 
@@ -223,7 +200,9 @@ async def reject_post(
 ):
     """Reject a draft post with feedback so the AI Creator can revise it."""
     result = await db.execute(
-        select(Post).where(Post.id == post_id, Post.workspace_id == tenant.workspace_id)
+        select(Post)
+        .options(selectinload(Post.media_assets), selectinload(Post.targets))
+        .where(Post.id == post_id, Post.workspace_id == tenant.workspace_id)
     )
     post = result.scalar_one_or_none()
     if not post:
@@ -233,7 +212,12 @@ async def reject_post(
     post.rejection_feedback = payload.feedback
     post.updated_at = datetime.utcnow()
     await db.commit()
-    await db.refresh(post)
+    post_res = await db.execute(
+        select(Post)
+        .options(selectinload(Post.media_assets), selectinload(Post.targets))
+        .where(Post.id == post.id)
+    )
+    post = post_res.scalar_one()
     return ApiResponse(data=PostOut.model_validate(post))
 
 
@@ -246,7 +230,9 @@ async def reschedule_post(
 ):
     """Update scheduled publishing timestamp."""
     result = await db.execute(
-        select(Post).where(Post.id == post_id, Post.workspace_id == tenant.workspace_id)
+        select(Post)
+        .options(selectinload(Post.media_assets), selectinload(Post.targets))
+        .where(Post.id == post_id, Post.workspace_id == tenant.workspace_id)
     )
     post = result.scalar_one_or_none()
     if not post:
@@ -255,7 +241,12 @@ async def reschedule_post(
     post.scheduled_at = payload.scheduled_at
     post.updated_at = datetime.utcnow()
     await db.commit()
-    await db.refresh(post)
+    post_res = await db.execute(
+        select(Post)
+        .options(selectinload(Post.media_assets), selectinload(Post.targets))
+        .where(Post.id == post.id)
+    )
+    post = post_res.scalar_one()
     return ApiResponse(data=PostOut.model_validate(post))
 
 
